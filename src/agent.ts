@@ -1,5 +1,6 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { SandClient } from "./sand/client.js";
+import { SYSTEM_PROMPT, withEnvironment } from "./prompt.js";
 import { SAND_SERVER_NAME, SAND_TOOL_NAMES, sandServer } from "./tools/sand.js";
 
 /**
@@ -24,21 +25,10 @@ export type RunOptions = {
   client?: SandClient;
   model?: string;
   maxTurns?: number;
+  /** What the caller seeded this container with — it is the only party that knows. */
+  environment?: string;
   onEvent?: (e: AgentEvent) => void;
 };
-
-const SYSTEM = `You build and repair web projects inside a live container.
-
-The project is already running. Files you write are hot-reloaded and the user is
-watching the result, so the running state matters more than the diff.
-
-How to work:
-- Read a file before you change it. Never edit from memory.
-- Put every file a change needs into a single write_files call.
-- After a change that could break the build, run_command a typecheck or build
-  and read the output. A page that renders blank explains itself in read_logs.
-- When something is already correct, say so and stop. Do not rewrite working
-  files to look busy.`;
 
 export async function runAgent(opts: RunOptions): Promise<AgentEvent & { type: "result" }> {
   const client = opts.client ?? new SandClient();
@@ -51,7 +41,7 @@ export async function runAgent(opts: RunOptions): Promise<AgentEvent & { type: "
   for await (const msg of query({
     prompt: opts.prompt,
     options: {
-      systemPrompt: SYSTEM,
+      systemPrompt: withEnvironment(SYSTEM_PROMPT, opts.environment),
       // No local filesystem or shell. SAND is the only way to touch the project.
       tools: [],
       mcpServers: { [SAND_SERVER_NAME]: server },

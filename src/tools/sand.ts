@@ -75,6 +75,60 @@ function writeFiles(ctx: Ctx) {
   );
 }
 
+/**
+ * The reason v2's edits cost as much as its builds: with only whole-file
+ * writes, changing a phone number re-sends the page. A person edits the site
+ * they have far more often than they build a new one, so this is the tool that
+ * decides what the product costs to run.
+ *
+ * The uniqueness requirement is what makes it safe. A replacement that matches
+ * twice is ambiguous, and guessing which one was meant is how an edit lands in
+ * the wrong place and passes typecheck.
+ */
+function editFile(ctx: Ctx) {
+  return tool(
+    "edit_file",
+    "Replace an exact stretch of text in a file that already exists. Prefer " +
+      "this over write_files for any change to an existing file — it sends only " +
+      "what differs. `old` must appear exactly once; include the surrounding " +
+      "lines needed to make it unique.",
+    {
+      path: z.string().describe("Project-relative path"),
+      old: z.string().min(1).describe("Exact text to replace, unique within the file"),
+      new: z.string().describe("Replacement text; empty string deletes the matched text"),
+    },
+    async ({ path, old, new: replacement }) => {
+      const read = await ctx.client.readFiles(ctx.previewId, [path]);
+      if (!read.ok) {
+        return read.kind === "gone" ? fail(GONE) : fail(`Could not read ${path}: ${read.status} ${read.message}`);
+      }
+      const current = read.files[0]?.content;
+      if (current === undefined) return fail(`No such file: ${path}. Use write_files to create it.`);
+
+      const first = current.indexOf(old);
+      if (first === -1) {
+        return fail(`That text is not in ${path}. Read the file and copy the exact text, including whitespace.`);
+      }
+      if (current.indexOf(old, first + old.length) !== -1) {
+        return fail(
+          `That text appears more than once in ${path}. Include enough surrounding lines to make it unique.`,
+        );
+      }
+
+      const next = current.slice(0, first) + replacement + current.slice(first + old.length);
+      const res = await ctx.client.writeFiles(ctx.previewId, [{ path, content: next }]);
+      if (!res.ok) {
+        return res.kind === "gone" ? fail(GONE) : fail(`Write failed: ${res.status} ${res.message}`);
+      }
+      const delta = next.length - current.length;
+      return text(
+        `Edited ${path} (${delta >= 0 ? "+" : ""}${delta} chars)` +
+          (res.warnings?.length ? `\n\nWarnings:\n- ${res.warnings.join("\n- ")}` : ""),
+      );
+    },
+  );
+}
+
 function deleteFiles(ctx: Ctx) {
   return tool(
     "delete_files",
@@ -140,6 +194,7 @@ export const SAND_SERVER_NAME = "sand";
 export const SAND_TOOL_NAMES = [
   "read_file",
   "write_files",
+  "edit_file",
   "delete_files",
   "run_command",
   "read_logs",
@@ -149,7 +204,7 @@ export function sandServer(ctx: Ctx) {
   return createSdkMcpServer({
     name: SAND_SERVER_NAME,
     version: "0.1.0",
-    tools: [readFile(ctx), writeFiles(ctx), deleteFiles(ctx), runCommand(ctx), readLogs(ctx)],
+    tools: [readFile(ctx), writeFiles(ctx), editFile(ctx), deleteFiles(ctx), runCommand(ctx), readLogs(ctx)],
     alwaysLoad: true,
   });
 }
