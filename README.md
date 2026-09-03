@@ -52,6 +52,14 @@ turn count, wall time, cost, and the preview URL.
 | SAND client | ported from v2 unchanged |
 | Tools (read/write/delete/exec/logs) | written, typechecked |
 | Agent loop | written, typechecked |
-| **End-to-end run** | **not yet verified** |
-| HTTP server for Railway | not started |
+| HTTP server (`/__health`, `/__contract`, `POST /run`) | boots under Railway's install conditions |
+| **End-to-end run against a real container** | **not yet verified** |
+| Session API parity with v2 | not started |
 | Templates, catalog, eval | not ported |
+
+## Deployment
+
+`start` runs `tsx src/server.ts` — no build step, no `dist/`. Railway installs
+with `NODE_ENV=production`, which skips `devDependencies` and does not reliably
+run npm lifecycle scripts, so a compiled artifact was a path to a file that was
+never written. Everything the server needs at runtime is in `dependencies`.
