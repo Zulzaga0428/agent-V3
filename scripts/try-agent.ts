@@ -4,15 +4,20 @@
  */
 import { SandClient } from "../src/sand/client.js";
 import { runAgent } from "../src/agent.js";
+import { businessTemplate } from "../src/templates/business.js";
 
+/** `--empty` starts from a bare container, to measure what the template is worth. */
+const args = process.argv.slice(2);
+const empty = args.includes("--empty");
 const instruction =
-  process.argv.slice(2).join(" ") ||
+  args.filter((a) => a !== "--empty").join(" ") ||
   "Change the home page heading to 'It works' and make sure the page still builds.";
 
 const client = new SandClient();
+const seed = empty ? [] : businessTemplate();
 
-console.log("Creating preview…");
-const created = await client.createPreview([], "app", 20);
+console.log(`Creating preview… (${empty ? "empty" : `seeded with ${seed.length} files`})`);
+const created = await client.createPreview(seed, "app", 20);
 
 if (!created.ok) {
   console.error(
