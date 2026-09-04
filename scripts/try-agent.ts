@@ -1,22 +1,37 @@
 /**
- * The walking skeleton: create a container, hand it to the agent, watch what
- * comes back. Run with `npm run try -- "your instruction"`.
+ * The walking skeleton: seed a container, hand it to the agent, watch what
+ * comes back.
+ *
+ *   npm run try -- "build a coffee shop site"
+ *   npm run try -- --theme=midnight-tech "build a barbershop site"
+ *   npm run try -- --empty "build a coffee shop site"
+ *
+ * `--empty` keeps the unseeded path so the starter's worth stays measurable
+ * rather than assumed.
  */
 import { SandClient } from "../src/sand/client.js";
 import { runAgent } from "../src/agent.js";
-import { businessTemplate } from "../src/templates/business.js";
+import { compose, environmentNote, select } from "../src/templates/index.js";
 
-/** `--empty` starts from a bare container, to measure what the template is worth. */
 const args = process.argv.slice(2);
 const empty = args.includes("--empty");
+const themeArg = args.find((a) => a.startsWith("--theme="))?.split("=")[1];
+const structureArg = args.find((a) => a.startsWith("--structure="))?.split("=")[1];
 const instruction =
-  args.filter((a) => a !== "--empty").join(" ") ||
-  "Change the home page heading to 'It works' and make sure the page still builds.";
+  args.filter((a) => !a.startsWith("--")).join(" ") ||
+  "Build a small coffee shop landing page with a hero, an about section and opening hours.";
 
 const client = new SandClient();
-const seed = empty ? [] : businessTemplate();
 
-console.log(`Creating preview… (${empty ? "empty" : `seeded with ${seed.length} files`})`);
+const selection = select(structureArg ? `${structureArg} ${instruction}` : instruction, themeArg);
+const seed = empty ? [] : compose(selection);
+
+console.log(
+  empty
+    ? "Creating preview… (empty)"
+    : `Creating preview… ${selection.structure.slug} + ${selection.theme.slug} (${seed.length} files)`,
+);
+
 const created = await client.createPreview(seed, "app", 20);
 
 if (!created.ok) {
@@ -38,6 +53,7 @@ const result = await runAgent({
   prompt: instruction,
   previewId: created.id,
   client,
+  ...(empty ? {} : { environment: environmentNote(selection) }),
   onEvent: (e) => {
     if (e.type === "tool") console.log(`  → ${e.name}`);
     else if (e.type === "text") console.log(`\n${e.text}\n`);
@@ -46,5 +62,7 @@ const result = await runAgent({
 
 const secs = ((Date.now() - started) / 1000).toFixed(1);
 console.log("─".repeat(60));
-console.log(`${result.ok ? "done" : "FAILED"} · ${result.turns} turns · ${secs}s${result.costUsd ? ` · $${result.costUsd.toFixed(4)}` : ""}`);
+console.log(
+  `${result.ok ? "done" : "FAILED"} · ${result.turns} turns · ${secs}s${result.costUsd ? ` · $${result.costUsd.toFixed(4)}` : ""}`,
+);
 console.log(`preview: ${created.url}`);

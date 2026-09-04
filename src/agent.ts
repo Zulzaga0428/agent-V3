@@ -30,6 +30,16 @@ export type RunOptions = {
   onEvent?: (e: AgentEvent) => void;
 };
 
+/**
+ * The container's TTL counts from the last time anyone touched it, and a build
+ * can think for minutes between writes. v2 shipped a keepalive it never called
+ * and preview containers died mid-run at fifteen minutes; the tools were then
+ * answering GONE for a container the run had done nothing wrong to.
+ *
+ * Five minutes against SAND's TTL leaves room for one ping to fail.
+ */
+const KEEPALIVE_MS = 5 * 60_000;
+
 export async function runAgent(opts: RunOptions): Promise<AgentEvent & { type: "result" }> {
   const client = opts.client ?? new SandClient();
   const emit = opts.onEvent ?? (() => {});
@@ -38,6 +48,17 @@ export async function runAgent(opts: RunOptions): Promise<AgentEvent & { type: "
   let turns = 0;
   let lastText = "";
 
+  const keepAlive = setInterval(() => {
+    void client.keepAlive(opts.previewId).catch(() => {});
+  }, KEEPALIVE_MS);
+
+  try {
+    return await drive();
+  } finally {
+    clearInterval(keepAlive);
+  }
+
+  async function drive(): Promise<AgentEvent & { type: "result" }> {
   for await (const msg of query({
     prompt: opts.prompt,
     options: {
@@ -77,4 +98,5 @@ export async function runAgent(opts: RunOptions): Promise<AgentEvent & { type: "
   const result = { type: "result" as const, ok: false, turns, ...(lastText ? { text: lastText } : {}) };
   emit(result);
   return result;
+  }
 }
